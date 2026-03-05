@@ -1,0 +1,145 @@
+# Reusable log rotation — prevents containers from filling disk
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+networks:
+  default:
+    driver: bridge
+  monitoring:
+    driver: bridge
+
+# Named volumes — Docker Desktop uses virtiofs for these, much faster than bind mounts on macOS
+volumes:
+  jellyfin_config:
+  jellyfin_cache:
+  portainer_data:
+  uptimekuma_data:
+  prometheus_data:
+  grafana_data:
+
+services:
+  # 1. Media Server (Jellyfin)
+  jellyfin:
+    image: jellyfin/jellyfin:latest
+    container_name: jellyfin
+    ports:
+      - "8096:8096"
+      - "8920:8920"
+      - "7359:7359/udp"
+      - "1900:1900/udp"
+    volumes:
+      - jellyfin_config:/config
+      - jellyfin_cache:/cache
+      - ~/Media:/media:ro
+    environment:
+      - JELLYFIN_PublishedServerUrl=http://localhost:8096
+    restart: unless-stopped
+    logging: *default-logging
+    networks:
+      - default
+
+  # 2. Portfolio Website
+  portfolio_web:
+    image: nginx:stable-alpine
+    container_name: portfolio_web
+    ports:
+      - "8081:80"
+    volumes:
+      - ./portfolio/html:/usr/share/nginx/html:ro
+    restart: unless-stopped
+    logging: *default-logging
+    networks:
+      - default
+
+  # 3. Docker Management (Portainer)
+  portainer:
+    image: portainer/portainer-ce:latest
+    container_name: portainer
+    ports:
+      - "9000:9000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - portainer_data:/data
+    restart: unless-stopped
+    logging: *default-logging
+    networks:
+      - default
+
+  # 4. Uptime Monitoring (Uptime Kuma)
+  uptime-kuma:
+    image: louislam/uptime-kuma:1
+    container_name: uptime-kuma
+    ports:
+      - "3001:3001"
+    volumes:
+      - uptimekuma_data:/app/data
+    restart: unless-stopped
+    logging: *default-logging
+    networks:
+      - default
+
+  # 5. Metrics Collection (Prometheus/Grafana)
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: node-exporter
+    command:
+      - '--path.rootfs=/host'
+    pid: host
+    volumes:
+      - /:/host:ro,rslave
+    restart: unless-stopped
+    logging: *default-logging
+    networks:
+      - monitoring
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    container_name: cadvisor
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+    ports:
+      - "8082:8080"
+    restart: unless-stopped
+    logging: *default-logging
+    networks:
+      - monitoring
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus_config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=15d'
+    depends_on:
+      - node-exporter
+      - cadvisor
+    restart: unless-stopped
+    logging: *default-logging
+    networks:
+      - monitoring
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3002:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+    logging: *default-logging
+    networks:
+      - monitoring

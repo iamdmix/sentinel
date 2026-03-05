@@ -1,0 +1,31 @@
+# Environment variables
+.env
+
+# Cloudflare tunnel config (contains tunnel ID and credentials path)
+config.yml
+
+# Cloudflare credentials
+*.json
+.cloudflared/
+
+# Docker volumes / runtime data
+data/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.Spotlight-V100
+.Trashes
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+logs/
